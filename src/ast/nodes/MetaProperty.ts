@@ -4,6 +4,7 @@ import type { PluginDriver } from '../../utils/PluginDriver';
 import { warnDeprecation } from '../../utils/error';
 import type { GenerateCodeSnippets } from '../../utils/generateCodeSnippets';
 import { dirname, normalize, relative } from '../../utils/path';
+import { RenderOptions } from '../../utils/renderHelpers';
 import { INTERACTION_ACCESSED, NodeInteraction } from '../NodeInteractions';
 import type ChildScope from '../scopes/ChildScope';
 import type { ObjectPath } from '../utils/PathTracker';
@@ -16,30 +17,14 @@ const ASSET_PREFIX = 'ROLLUP_ASSET_URL_';
 const CHUNK_PREFIX = 'ROLLUP_CHUNK_URL_';
 const FILE_PREFIX = 'ROLLUP_FILE_URL_';
 
+// TODO Lukas clean up this file if it makes sense
 export default class MetaProperty extends NodeBase {
 	declare meta: Identifier;
 	declare property: Identifier;
 	declare type: NodeType.tMetaProperty;
 
 	private declare metaProperty?: string | null;
-
-	addAccessedGlobals(
-		format: InternalModuleFormat,
-		accessedGlobalsByScope: Map<ChildScope, Set<string>>
-	): void {
-		const metaProperty = this.metaProperty;
-		const accessedGlobals = (
-			metaProperty &&
-			(metaProperty.startsWith(FILE_PREFIX) ||
-				metaProperty.startsWith(ASSET_PREFIX) ||
-				metaProperty.startsWith(CHUNK_PREFIX))
-				? accessedFileUrlGlobals
-				: accessedMetaUrlGlobals
-		)[format];
-		if (accessedGlobals.length > 0) {
-			this.scope.addAccessedGlobals(accessedGlobals, accessedGlobalsByScope);
-		}
-	}
+	private preliminaryChunkName: string | null = null;
 
 	getReferencedFileName(outputPluginDriver: PluginDriver): string | null {
 		const metaProperty = this.metaProperty as string | null;
@@ -71,15 +56,10 @@ export default class MetaProperty extends NodeBase {
 		}
 	}
 
-	renderFinalMechanism(
-		code: MagicString,
-		chunkId: string,
-		format: InternalModuleFormat,
-		snippets: GenerateCodeSnippets,
-		outputPluginDriver: PluginDriver
-	): void {
+	render(code: MagicString, { format, outputPluginDriver, snippets }: RenderOptions): void {
 		const parent = this.parent;
 		const metaProperty = this.metaProperty as string | null;
+		const chunkId = this.preliminaryChunkName!;
 
 		if (
 			metaProperty &&
@@ -164,6 +144,26 @@ export default class MetaProperty extends NodeBase {
 			} else {
 				code.overwrite(this.start, this.end, replacement, { contentOnly: true });
 			}
+		}
+	}
+
+	setResolution(
+		format: InternalModuleFormat,
+		accessedGlobalsByScope: Map<ChildScope, Set<string>>,
+		preliminaryChunkName: string
+	): void {
+		this.preliminaryChunkName = preliminaryChunkName;
+		const { metaProperty } = this;
+		const accessedGlobals = (
+			metaProperty &&
+			(metaProperty.startsWith(FILE_PREFIX) ||
+				metaProperty.startsWith(ASSET_PREFIX) ||
+				metaProperty.startsWith(CHUNK_PREFIX))
+				? accessedFileUrlGlobals
+				: accessedMetaUrlGlobals
+		)[format];
+		if (accessedGlobals.length > 0) {
+			this.scope.addAccessedGlobals(accessedGlobals, accessedGlobalsByScope);
 		}
 	}
 }
